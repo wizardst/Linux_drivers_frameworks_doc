@@ -1,0 +1,139 @@
+[dma, normal, high_memory]仮想メモリ領域を、Buddyアルゴリズムで管理してる。
+
+Buddyアルゴリズム:
+  空いてるPageを、2のｎ乗を単位にして管理する。
+  
+-------------------------------------------------------------
+jetson nano:
+-------------------------------------------------------------
+seokgh@jetson-nano:~$ cat /proc/meminfo 
+MemTotal:        4059272 kB
+MemFree:         2635252 kB
+MemAvailable:    3138248 kB
+Buffers:           44472 kB
+Cached:           589288 kB
+SwapCached:            0 kB
+Active:           636388 kB
+Inactive:         485692 kB
+Active(anon):     489628 kB
+Inactive(anon):    31248 kB
+Active(file):     146760 kB
+Inactive(file):   454444 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:       2029632 kB
+SwapFree:        2029632 kB
+Dirty:             64272 kB
+Writeback:             0 kB
+AnonPages:        469168 kB
+Mapped:           193448 kB
+Shmem:             32572 kB
+Slab:             117276 kB
+SReclaimable:      55776 kB
+SUnreclaim:        61500 kB
+KernelStack:        7920 kB
+PageTables:        10768 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:     4059268 kB
+Committed_AS:    3448612 kB
+VmallocTotal:   263061440 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+AnonHugePages:     75776 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+NvMapMemFree:       5632 kB
+NvMapMemUsed:      74252 kB
+CmaTotal:         475136 kB
+CmaFree:          441280 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+
+
+seokgh@jetson-nano:~$ cat /proc/buddyinfo 
+Node 0, zone      DMA      6      8      6      6      4      7      8      8      6     10    484
+Node 0, zone   Normal    190     84     48    196     81     24     46     54     13     28     52
+                  ^       ^       ^      ^      ^      ^      ^      ^      ^      ^      ^      ^
+                  |       |       |      |      +連続 4 pageが...
+                  |       |       |      +連続 3 pageが空いてるmemory数
+                  |       |       +連続 2 pageが空いてるmemory数
+                  |       + 連続 1 pageが空いてるmemory数
+                  + zone name
+
+
+-------------------------------------------------------------
+z490 ubuntu:
+-------------------------------------------------------------
+seokgh@Z490 ~ $ cat /proc/buddyinfo 
+Node 0, zone      DMA      0      0      0      1      2      1      1      0      1      2      2 
+Node 0, zone    DMA32     13     10     14      9     14     14     16     11      9      9    589 
+Node 0, zone   Normal  18944   5996   4432   3377   2624   1815   1070    223    109     54   1889 
+
+
+seokgh@Z490 ~ $ cat /proc/meminfo 
+MemTotal:       16304696 kB
+MemFree:        11516528 kB
+MemAvailable:   13169688 kB
+Buffers:           75204 kB
+Cached:          1725880 kB
+SwapCached:            0 kB
+Active:          2953024 kB
+Inactive:        1032204 kB
+Active(anon):    2191880 kB
+Inactive(anon):   135400 kB
+Active(file):     761144 kB
+Inactive(file):   896804 kB
+Unevictable:       12916 kB
+Mlocked:           12916 kB
+SwapTotal:       2097148 kB
+SwapFree:        2097148 kB
+Dirty:              4004 kB
+Writeback:             0 kB
+AnonPages:       2197256 kB
+Mapped:           748524 kB
+Shmem:            138240 kB
+KReclaimable:     335356 kB
+Slab:             555656 kB
+SReclaimable:     335356 kB
+SUnreclaim:       220300 kB
+KernelStack:       19872 kB
+PageTables:        29044 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:    10249496 kB
+Committed_AS:    7759908 kB
+VmallocTotal:   34359738367 kB
+VmallocUsed:       81280 kB
+VmallocChunk:          0 kB
+Percpu:            13888 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:         0 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+FileHugePages:         0 kB
+FilePmdMapped:         0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+Hugetlb:               0 kB
+DirectMap4k:      575872 kB
+DirectMap2M:     7723008 kB
+DirectMap1G:     9437184 kB
+
+
+
+//カーネル仮想メモリ領域内にて、
+//物理メモリ領域の仮想メモリ区間(DMAゾンと、Normalゾン)では、下記方法で、物理アドレス<--->仮想アドレス　変換が出来る:
+virt_to_phys()
+phys_to_virt()
+
+＊DMAゾンとNormalゾンのみで、使える。
+high_memory区間の　物理アドレス<−>仮想アドレス　変換は、簡単には出来ない

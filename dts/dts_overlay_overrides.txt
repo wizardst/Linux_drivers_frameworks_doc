@@ -1,0 +1,162 @@
+-------------------------------------------------------------------------------------------------------------------------
+__overlay__
+-------------------------------------------------------------------------------------------------------------------------
+See
+    Documentation/devicetree/overlay-notes.txt
+
+---------------------------------------------------------
+Device Tree Overlay とは
+---------------------------------------------------------
+Dynamic DeviceTreeとも呼ぶ。
+Linux Kernelには、何時の頃から(Version 4.0辺り?　4.4辺り?) Device Tree Overlay という機能が追加されています。
+これは、Linuxの動作中の Device Tree に、新たに Device Treeを追加したり、削除したりする機能です。
+
+---------------------------------------------------------
+既存 Device Tree の問題点
+---------------------------------------------------------
+システムが起動すると、ブートローダー(例:u-boot)は、そのblobをカーネルに渡します。
+カーネルはそれを解析し、Device Treeで指定された通りに、全てのデバイスを作成します。
+
+したがって、システムが稼働しているときは、魔法全体がすでに終わっています。
+つまり、この方法では Linux を起動する前に、ハードウェアが決まっている場合しか使えない。
+
+多数の拡張ボードを備えたPlatformでは、別の拡張ボードを使用する度に、Device Treeを再コンパイルする必要があります。
+また、FPGA のような、Reconfig可能なHardwareとも、相性が良くありません。
+
+したがって、実行時にDevice Treeで、デバイスを追加/変更できるOverlayメカニズムは、すごいです。
+
+
+---------------------------------------------------------
+Devicetree Overlay でできること
+---------------------------------------------------------
+Linux Kernelは、起動時にbootloaderから、指定されたデバイスツリーを読み込みます(base tree)。
+通常は、デバイスツリー情報は、再起動しない限り、変更はできないが、Overlayを使えば、base treeの内容に対し、
+    1. node(=デバイス）の追加
+    2. propertyの追加
+    3. propertyのvalue変更
+といったことが、再起動なしで、出来るようになります。
+
+
+Overlayする内容は、Overlayファイルで記述し、そのファイルを読み込むことで、実施されます。
+Overlayファイルは、複数読み込むことも可能です。
+Overlayした内容は、Overlayファイル単位で、削除することも可能で、そのOverlayファイルを読み込む前の状態に、戻すこともできます。
+
+
+---------------------------------------------------------
+Linux Kernelのdevice tree overlays機能をOnする
+---------------------------------------------------------
+.config で CONFIG_OF_OVERLAY=y を追加する
+
+OR
+make menu_config
+    ---> Device Drivers
+            ---> Device Tree and Open Firmware support
+                    ---> Device Tree overlays をチェックする
+                    
+---------------------------------------------------------
+Devicetree Overlay ファイルの書き方
+---------------------------------------------------------
+デバイスツリーOverlayファイルも、テキストソースとバイナリがあり、同じくdtcでコンパイルします。
+デバイスツリーファイルと区別するため、ここではOverlayソースの拡張子を.dtso, Overlayバイナリの拡張子を.dtboとしてます。
+
+必要最小限度のOverlayソースファイルは以下です。
+
+/plugin/;                     /* allow undefined label references and record them */
+/ {
+    fragment@0 {              /* node名は何でも良い */
+        target = <phandle>;   /* overlayするnodeの phandle */
+      //target-path="/path";  /* overlayするnodeの path でも可 */
+
+        __overlay__ {
+                /* Overlayする property らを定義 */
+                /* Overlayする node     らを定義 */
+        };
+    };
+};
+
+必要な内容はシンプルで、下記となります。
+    1./dts-v1/; の後に /plugin/;
+    2.ルートnode
+    3.ルートnodeの子node。 nodeの名前は何でも良い
+    4.子node に target（もしくは target-path）propertyと __overlay__ nodeを持たせる
+    
+        4_1. target or target-path propertyで、Overlay対象となるnodeを指定
+                target ではphandleで指定(or ラベル)
+                target-path ではpath stringで指定
+                
+        4_2. __overlay__ node 内に具体的に、Overlayする内容を記述
+                追加したいpropertyやnodeたちを定義する
+
+
+/plugin/;は、Overlayファイルの記述中に、過去に読み込んだデバイスツリー(live tree)で定義したlabelを参照できるようにするためのものです。
+例えば、targetのvalueとして、base treeで定義されているラベル名を使えるようになります
+（Overlayファイル中に、このファイル内で定義されていないラベルがあっても、dtcでエラーとならない）。
+
+ただし、base treeを、コンパイル時に、.dtbにシンボル情報も含めるように、-@ オプション付で、コンパイルする必要があります。
+
+
+
+---------------------------------------------------------
+Devicetree Overlayの反映方法
+---------------------------------------------------------
+まず、dtcでBuildする:
+
+    $ dtc -@ -I dts -O dtb -o my_overlay-overlay.dts my_overlay.dtbo
+
+    //The -@ is needed for overlays as it prevents the compiler from looking up the references from the source file, which it - of course - wouldn't find.
+
+
+上書きする:
+    //まず、下記のように、動いてるシステムのSysfsに、Directoryを作る。xxx名称は、何でも良いが、分かりやすく、上書きしたいDeviceの名称等にすると良い。
+    mkdir /sys/kernel/config/device-tree/overlays/xxx
+
+    次には、echo OR catコマンドで、dtboファイルを、反映させる:
+    echo xxx.dtbo >/sys/kernel/config/device-tree/overlays/xxx/path
+    或は、
+    cat xxx.dtbo >/sys/kernel/config/device-tree/overlays/xxx/dtbo
+
+    Overlayすると、Warningが表示される場合があるが、無視可。
+
+上書きを確認する:
+    Device Treeと同じく、/proc/device-tree　に、上書きしたnodeと同名のdirectoryがあり、中ではノードとその子ノードの属性も確認できる。
+
+
+---------------------------------------------------------
+Devicetree Overlayの削除方法
+---------------------------------------------------------
+    rmdir /sys/kernel/config/device-tree/overlays/xxx
+
+
+
+
+
+
+-------------------------------------------------------------------------------------------------------------------------
+__overrides__
+-------------------------------------------------------------------------------------------------------------------------
+dtsを大量にoverlayするのを避けるために、またペリフェラル開発者がdtsに手を入れるのを減らすために、「Device Treeのパラメーター」という機能を追加した。
+まるで、modprobe xxx.ko にパラメーターを付ける機能とか、kernel cmdlineなどのような、パラメーター機能のことを言う。
+
+Device Treeのパラメーターは、
+/ node {} 配下に
+    __overrides__ node {
+        ...   
+    };
+を追加することによって、定義される。
+
+
+---------------------------------
+__overrides__ node format:
+---------------------------------
+    パラメーター名称 = a phandle (reference to a label), "property";
+                                                          |
++---------------------------------------------------------+
+V
+string、integer、boolean properties are supported:
+...
+
+
+Device Trees, overlays, and parameters:
+    https://www.raspberrypi.org/documentation/configuration/device-tree.md
+
+

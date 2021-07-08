@@ -1,0 +1,196 @@
+----------------------------------------------------------------------
+List内でのループ類:
+----------------------------------------------------------------------
+在り処:
+	include/linux/list.h
+
+--------------------------
+list_for_each(pos, head)
+--------------------------
+	//kernel ver: v4.9.239, v5,9
+	#define list_for_each(pos, head) \
+	for (pos = (head)->next; pos != (head); pos = pos->next)
+	
+	//kernel ver: v2.6.39.4
+	#define list_for_each(pos, head) \
+   	　　　for (pos = (head)->next, prefetch(pos->next); pos != (head); \
+        	pos = pos->next, prefetch(pos->next))
+	
+	このマクロは、forループである。
+	引数の pos をループ素子とし、リストの head から、後方向へ pos を移動するが、 head へ戻るまで、一周する。
+
+	例:
+		linux/v5.9/source/fs/jffs2/debug.c
+		
+		list_for_each(this, &c->clean_list) {		//マクロ定義にて、for文に、{}を追加していないから、使う所で追加
+		//for (this = (&c->clean_list); this != (&c->clean_list); this = this->next ) {		//展開すると、これ。
+			struct jffs2_eraseblock *jeb = list_entry(this, struct jffs2_eraseblock, list);
+			numblocks ++;
+			dirty += jeb->wasted_size;
+			if (!(jeb->used_size == 0 && jeb->dirty_size == 0 && jeb->wasted_size == 0)) {
+				printk(JFFS2_DBG "clean_list: %#08x (used %#08x, dirty %#08x, wasted %#08x, unchecked %#08x, free %#08x)\n",
+					jeb->offset, jeb->used_size, jeb->dirty_size, jeb->wasted_size, jeb->unchecked_size, jeb->free_size);
+			}
+		}
+
+		printk (JFFS2_DBG "Contains %d blocks with total wasted size %u, average wasted size: %u\n",
+			numblocks, dirty, dirty / numblocks);
+
+
+		list_for_each（）と、list_entry（）は、ほぼ一緒に使うんでしたっけ？
+		
+--------------------------
+list_for_each_entry(pos, head, member)
+--------------------------
+//kernel ver: v5.9
+
+/**
+ * list_for_each_entry - iterate over list of given type
+ * @pos:	the type * to use as a loop cursor.
+ * @head:	the head for your list.
+ * @member:	the name of the list_head within the struct.
+ */
+#define list_for_each_entry(pos, head, member)				\
+	for (pos = list_first_entry(head, typeof(*pos), member);	\
+	     &pos->member != (head);					\
+	     pos = list_next_entry(pos, member))
+
+
+/**
+ * list_first_entry - get the first element from a list
+ * @ptr:	the list head to take the element from.
+ * @type:	the type of the struct this is embedded in.
+ * @member:	the name of the list_head within the struct.
+ *
+ * Note, that list is expected to be not empty.
+ */
+#define list_first_entry(ptr, type, member) \
+	list_entry((ptr)->next, type, member)
+	
+	
+--------------------------
+list_entry(ptr, type, member)
+--------------------------
+/**
+ * list_entry - get the struct for this entry
+ * @ptr:	the &struct list_head pointer.
+ * @type:	the type of the struct this is embedded in.
+ * @member:	the name of the list_head within the struct.
+ */
+#define list_entry(ptr, type, member) \
+	container_of(ptr, type, member)
+
+
+--------------------------
+container_of()
+--------------------------
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * @ptr:	the pointer to the member.
+ * @type:	the type of the container struct this is embedded in.
+ * @member:	the name of the member within the struct.
+ *
+ */
+#define container_of(ptr, type, member) ({				\
+	void *__mptr = (void *)(ptr);					\
+	BUILD_BUG_ON_MSG(!__same_type(*(ptr), ((type *)0)->member) &&	\
+			 !__same_type(*(ptr), void),			\
+			 "pointer type mismatch in container_of()");	\
+	((type *)(__mptr - offsetof(type, member))); })
+
+
+--------------------------
+offsetof(TYPE, MEMBER)
+--------------------------
+#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
+
+
+
+
+----------------------------------------------------------------------
+vmlinux image作成時の優先度マクロ: Section Property
+    include/linux/init.h
+----------------------------------------------------------------------
+#define __define_initcall(fn, id) \
+　    static initcall_t __initcall_##fn##id __used \
+	    __attribute__((__section__(".initcall" #id ".init"))) = fn;         //fn関数を、特定のproperty sectionに配置してる
+  
+
+
+#define pure_initcall(fn)		__define_initcall(fn, 0)
+
+#define core_initcall(fn)		__define_initcall(fn, 1)
+#define core_initcall_sync(fn)		__define_initcall(fn, 1s)
+#define postcore_initcall(fn)		__define_initcall(fn, 2)
+#define postcore_initcall_sync(fn)	__define_initcall(fn, 2s)
+#define arch_initcall(fn)		__define_initcall(fn, 3)
+#define arch_initcall_sync(fn)		__define_initcall(fn, 3s)
+#define subsys_initcall(fn)		__define_initcall(fn, 4)
+#define subsys_initcall_sync(fn)	__define_initcall(fn, 4s)
+#define fs_initcall(fn)			__define_initcall(fn, 5)
+#define fs_initcall_sync(fn)		__define_initcall(fn, 5s)
+#define rootfs_initcall(fn)		__define_initcall(fn, rootfs)
+#define device_initcall(fn)		__define_initcall(fn, 6)
+#define device_initcall_sync(fn)	__define_initcall(fn, 6s)
+#define late_initcall(fn)		__define_initcall(fn, 7)
+#define late_initcall_sync(fn)		__define_initcall(fn, 7s)
+
+例:
+subsys_initcall(gpio_mxc_init);               //機能: マクロで宣言した関数を、特定のSectionに配置する(.initcall4.init)
+
+    static int __init gpio_mxc_init(void)
+    {
+	    return platform_driver_register(&mxc_gpio_driver);
+    }
+
+
+----------------------------------------------------------------------
+.ko moduleマクロ:
+      優先度6
+      include/linux/module.h
+----------------------------------------------------------------------
+#define module_init(x)	__initcall(x);
+
+    展開すると:
+    module_init
+        __initcall
+            device_initcall
+                __define_initcall("6",fn,6)
+
+
+#define module_exit(x)	__exitcall(x);
+
+----------------------------------------------------------------------
+vmlinux section list:
+	kernelをbuildをしたら、/arch/arm/kernel/vmlinux.lds が生成されるので、中身見れば分かる
+----------------------------------------------------------------------
+...
+.initcall4.init
+...
+
+
+
+SECTIONS
+{
+ . = 0xC0000000 + 0x00008000;
+ .init : { /* Init code and data                */
+  _stext = .;
+  _sinittext = .;
+   *(.head.text)
+   *(.init.text) *(.cpuinit.text) *(.meminit.text)
+  ......
+  . = ALIGN(16); __setup_start = .; *(.init.setup) __setup_end = .;
+  __initcall_start = .; *(.initcallearly.init) __early_initcall_end = .;
+ *(.initcall0.init) *(.initcall0s.init)  *(.initcall1.init) *(.initcall1s.init) 
+ *(.initcall2.init) ... __initcall_end = .;
+ ...
+
+
+
+問:
+　kernelは、起動時に、たくさんの作業をやる必要があると思うが、 どうやって、順番を守りながら、初期化してるのか？
+答:
+　kernelは、すべての起動時に実行が必要な関数を、Levelにより、1~8まで、分類している。
+　プログラマーは、自分の書いた関数に、適切なLevelを設定しておくだけである。Levelを書いたら、Link時に、自動に特定のSECTIONに入る。
+ そして、kernelは、起動時に、順に各SECTIONを、実行していく。
+ 
